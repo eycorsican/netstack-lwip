@@ -9,12 +9,9 @@ use std::{
     time,
 };
 
+use futures::sink::Sink;
+use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
-use log::*;
-use tokio::{
-    self,
-    io::{AsyncRead, AsyncWrite, ReadBuf},
-};
 
 use super::lwip::*;
 use super::output::{output_ip4, output_ip6, OUTPUT_CB_PTR};
@@ -27,6 +24,7 @@ pub struct NetStackImpl {
     waker: Option<Waker>,
     tx: Sender<Vec<u8>>,
     rx: Receiver<Vec<u8>>,
+    sink_buf: Option<Vec<u8>>, // We're flushing per item, no need large buffer.
 }
 
 impl NetStackImpl {
@@ -46,6 +44,7 @@ impl NetStackImpl {
             waker: None,
             tx,
             rx,
+            sink_buf: None,
         });
 
         unsafe {
@@ -89,20 +88,12 @@ impl Drop for NetStackImpl {
     }
 }
 
-impl AsyncRead for NetStackImpl {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut ReadBuf,
-    ) -> Poll<io::Result<()>> {
+impl Stream for NetStackImpl {
+    type Item = io::Result<Vec<u8>>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.rx.try_recv() {
-            Ok(pkt) => {
-                if pkt.len() > buf.remaining() {
-                    warn!("truncated pkt, short buf");
-                }
-                buf.put_slice(&pkt);
-                Poll::Ready(Ok(()))
-            }
+            Ok(pkt) => Poll::Ready(Some(Ok(pkt))),
             Err(_) => {
                 if let Some(waker) = self.waker.as_ref() {
                     if !waker.will_wake(cx.waker()) {
@@ -117,43 +108,65 @@ impl AsyncRead for NetStackImpl {
     }
 }
 
-impl AsyncWrite for NetStackImpl {
-    fn poll_write(self: Pin<&mut Self>, _cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
-        unsafe {
-            let _g = self.lwip_mutex.lock();
+impl Sink<Vec<u8>> for NetStackImpl {
+    type Error = io::Error;
 
-            let pbuf = pbuf_alloc(pbuf_layer_PBUF_RAW, buf.len() as u16_t, pbuf_type_PBUF_RAM);
-            if pbuf.is_null() {
-                return Poll::Pending;
-            }
-            pbuf_take(pbuf, buf.as_ptr() as *const raw::c_void, buf.len() as u16_t);
+    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        if self.sink_buf.is_none() {
+            Poll::Ready(Ok(()))
+        } else {
+            self.poll_flush(cx)
+        }
+    }
 
-            if let Some(input_fn) = (*netif_list).input {
-                let err = input_fn(pbuf, netif_list);
-                if err == err_enum_t_ERR_OK as err_t {
-                    Poll::Ready(Ok(buf.len()))
+    fn start_send(mut self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
+        self.sink_buf.replace(item);
+        Ok(())
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<(), Self::Error>> {
+        if let Some(item) = self.sink_buf.take() {
+            unsafe {
+                let _g = self.lwip_mutex.lock();
+
+                let pbuf = pbuf_alloc(pbuf_layer_PBUF_RAW, item.len() as u16_t, pbuf_type_PBUF_RAM);
+                if pbuf.is_null() {
+                    return Poll::Pending;
+                }
+                pbuf_take(
+                    pbuf,
+                    item.as_ptr() as *const raw::c_void,
+                    item.len() as u16_t,
+                );
+
+                if let Some(input_fn) = (*netif_list).input {
+                    let err = input_fn(pbuf, netif_list);
+                    if err == err_enum_t_ERR_OK as err_t {
+                        Poll::Ready(Ok(()))
+                    } else {
+                        pbuf_free(pbuf);
+                        Poll::Ready(Err(io::Error::new(
+                            io::ErrorKind::Interrupted,
+                            format!("input error: {}", err),
+                        )))
+                    }
                 } else {
                     pbuf_free(pbuf);
                     Poll::Ready(Err(io::Error::new(
                         io::ErrorKind::Interrupted,
-                        format!("input error: {}", err),
+                        "input fn not set",
                     )))
                 }
-            } else {
-                pbuf_free(pbuf);
-                Poll::Ready(Err(io::Error::new(
-                    io::ErrorKind::Interrupted,
-                    "input fn not set",
-                )))
             }
+        } else {
+            Poll::Ready(Ok(()))
         }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 }

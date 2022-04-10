@@ -1,7 +1,8 @@
 use std::{io, pin::Pin, sync::Arc};
 
+use futures::sink::Sink;
+use futures::stream::Stream;
 use futures::task::{Context, Poll};
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::stack_impl::NetStackImpl;
 use super::LWIPMutex;
@@ -14,30 +15,30 @@ impl NetStack {
     }
 }
 
-impl AsyncRead for NetStack {
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut ReadBuf,
-    ) -> Poll<io::Result<()>> {
-        AsyncRead::poll_read(Pin::new(&mut self.0), cx, buf)
+impl Stream for NetStack {
+    type Item = io::Result<Vec<u8>>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.0).poll_next(cx)
     }
 }
 
-impl AsyncWrite for NetStack {
-    fn poll_write(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        AsyncWrite::poll_write(Pin::new(&mut self.0), cx, buf)
+impl Sink<Vec<u8>> for NetStack {
+    type Error = io::Error;
+
+    fn poll_ready(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.0).poll_ready(cx)
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        AsyncWrite::poll_flush(Pin::new(&mut self.0), cx)
+    fn start_send(mut self: Pin<&mut Self>, item: Vec<u8>) -> Result<(), Self::Error> {
+        Pin::new(&mut self.0).start_send(item)
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        AsyncWrite::poll_shutdown(Pin::new(&mut self.0), cx)
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.0).poll_flush(cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Pin::new(&mut self.0).poll_close(cx)
     }
 }
