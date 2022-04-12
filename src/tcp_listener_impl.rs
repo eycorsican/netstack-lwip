@@ -1,10 +1,11 @@
-use std::{collections::VecDeque, os::raw, pin::Pin, sync::Arc};
+use std::{collections::VecDeque, net::SocketAddr, os::raw, pin::Pin, sync::Arc};
 
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
 use log::*;
 
 use super::lwip::*;
+use super::tcp_stream::TcpStream;
 use super::tcp_stream_impl::TcpStreamImpl;
 use super::LWIPMutex;
 
@@ -29,7 +30,7 @@ pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err
 }
 
 pub struct TcpListenerImpl {
-    pub tpcb: *mut tcp_pcb,
+    pub tpcb: usize,
     pub lwip_mutex: Arc<LWIPMutex>,
     pub waker: Option<Waker>,
     pub queue: VecDeque<Box<TcpStreamImpl>>,
@@ -54,38 +55,37 @@ impl TcpListenerImpl {
                 panic!("{}", format!("listen tcp error: {}", reason));
             }
             let listener = Box::new(TcpListenerImpl {
-                tpcb,
+                tpcb: tpcb as usize,
                 lwip_mutex: lwip_mutex.clone(),
                 waker: None,
                 queue: VecDeque::new(),
             });
             let arg = &*listener as *const TcpListenerImpl as *mut raw::c_void;
-            tcp_arg(listener.tpcb, arg);
-            tcp_accept(listener.tpcb, Some(tcp_accept_cb));
+            tcp_arg(tpcb, arg);
+            tcp_accept(tpcb, Some(tcp_accept_cb));
             listener
         }
     }
 }
 
-unsafe impl Sync for TcpListenerImpl {}
-unsafe impl Send for TcpListenerImpl {}
-
 impl Drop for TcpListenerImpl {
     fn drop(&mut self) {
         unsafe {
             let _g = self.lwip_mutex.lock();
-            tcp_accept(self.tpcb, None);
-            tcp_close(self.tpcb);
+            tcp_accept(self.tpcb as *mut tcp_pcb, None);
+            tcp_close(self.tpcb as *mut tcp_pcb);
         }
     }
 }
 
 impl Stream for TcpListenerImpl {
-    type Item = Box<TcpStreamImpl>;
+    type Item = (TcpStream, SocketAddr, SocketAddr);
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         if let Some(stream) = self.queue.pop_front() {
-            return Poll::Ready(Some(stream));
+            let local_addr = stream.local_addr().to_owned();
+            let remote_addr = stream.remote_addr().to_owned();
+            return Poll::Ready(Some((TcpStream::new(stream), local_addr, remote_addr)));
         }
         if let Some(waker) = self.waker.as_ref() {
             if !waker.will_wake(cx.waker()) {

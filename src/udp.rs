@@ -1,5 +1,6 @@
 use std::{
     collections::VecDeque,
+    io,
     net::SocketAddr,
     os::raw,
     pin::Pin,
@@ -8,6 +9,7 @@ use std::{
 
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
+use futures::StreamExt;
 use log::*;
 
 use super::lwip::*;
@@ -23,7 +25,7 @@ pub extern "C" fn udp_recv_cb(
     dst_addr: *const ip_addr_t,
     dst_port: u16_t,
 ) {
-    let listener = unsafe { &mut *(arg as *mut UdpListener) };
+    let listener = unsafe { &mut *(arg as *mut UdpSocket) };
     let src_addr = unsafe {
         match util::to_socket_addr(&*addr, port) {
             Ok(a) => a,
@@ -48,8 +50,7 @@ pub extern "C" fn udp_recv_cb(
 
     match listener.queue.lock() {
         Ok(mut queue) => {
-            let pkt = ((&buf[..n]).to_vec(), src_addr, dst_addr);
-            queue.push_back(pkt);
+            queue.push_back(((&buf[..n]).to_vec(), src_addr, dst_addr));
             match listener.waker.lock() {
                 Ok(waker) => {
                     if let Some(waker) = waker.as_ref() {
@@ -67,13 +68,13 @@ pub extern "C" fn udp_recv_cb(
     }
 }
 
-pub fn send_udp(
-    lwip_mutex: Arc<LWIPMutex>,
+fn send_udp(
+    lwip_mutex: &Arc<LWIPMutex>,
     src_addr: &SocketAddr,
     dst_addr: &SocketAddr,
     pcb: usize,
     data: &[u8],
-) {
+) -> io::Result<()> {
     unsafe {
         let _g = lwip_mutex.lock();
         let pbuf = pbuf_alloc_reference(
@@ -83,11 +84,21 @@ pub fn send_udp(
         );
         let src_ip = match util::to_ip_addr_t(&src_addr.ip()) {
             Ok(v) => v,
-            Err(_) => return,
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Convert address failed",
+                ))
+            }
         };
         let dst_ip = match util::to_ip_addr_t(&dst_addr.ip()) {
             Ok(v) => v,
-            Err(_) => return,
+            Err(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Convert address failed",
+                ))
+            }
         };
         let err = udp_sendto(
             pcb as *mut udp_pcb,
@@ -98,66 +109,78 @@ pub fn send_udp(
             src_addr.port() as u16_t,
         );
         if err != err_enum_t_ERR_OK as err_t {
-            warn!("udp_sendto error: {}", err);
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("udp_sendto faied: {}", err),
+            ));
         }
         pbuf_free(pbuf);
+        Ok(())
     }
 }
 
-pub struct UdpListener {
-    pcb: *mut udp_pcb,
+pub struct UdpSocket {
+    lwip_mutex: Arc<LWIPMutex>,
+    pcb: usize,
     waker: Arc<Mutex<Option<Waker>>>,
     queue: Arc<Mutex<VecDeque<(Vec<u8>, SocketAddr, SocketAddr)>>>,
 }
 
-impl UdpListener {
-    pub fn new() -> Self {
+impl UdpSocket {
+    pub(crate) fn new(lwip_mutex: Arc<LWIPMutex>) -> Box<Self> {
         unsafe {
             let pcb = udp_new();
-            let listener = UdpListener {
-                pcb,
+            let socket = Box::new(Self {
+                lwip_mutex,
+                pcb: pcb as usize,
                 waker: Arc::new(Mutex::new(None)),
                 queue: Arc::new(Mutex::new(VecDeque::new())),
-            };
+            });
             let err = udp_bind(pcb, &ip_addr_any_type, 0);
             if err != err_enum_t_ERR_OK as err_t {
                 panic!("{}", format!("bind udp error: {}", err));
             }
-            let arg = &listener as *const UdpListener as *mut raw::c_void;
+            let arg = &*socket as *const UdpSocket as *mut raw::c_void;
             udp_recv(pcb, Some(udp_recv_cb), arg);
-            listener
+            socket
         }
     }
 
-    pub fn pcb(&self) -> usize {
-        self.pcb as usize
+    pub fn split(self: Box<Self>) -> (SendHalf, RecvHalf) {
+        (
+            SendHalf {
+                lwip_mutex: self.lwip_mutex.clone(),
+                pcb: self.pcb,
+            },
+            RecvHalf { socket: self },
+        )
     }
 }
 
-unsafe impl Sync for UdpListener {}
-unsafe impl Send for UdpListener {}
-
-impl Drop for UdpListener {
+impl Drop for UdpSocket {
     fn drop(&mut self) {
         unsafe {
-            udp_recv(self.pcb, None, std::ptr::null_mut());
-            udp_remove(self.pcb);
+            udp_recv(self.pcb as *mut udp_pcb, None, std::ptr::null_mut());
+            udp_remove(self.pcb as *mut udp_pcb);
         }
     }
 }
 
-impl Stream for UdpListener {
-    type Item = (Vec<u8>, SocketAddr, SocketAddr);
+impl Stream for UdpSocket {
+    type Item = io::Result<(Vec<u8>, SocketAddr, SocketAddr)>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         match self.queue.lock() {
             Ok(mut queue) => {
-                if let Some(sess) = queue.pop_front() {
-                    return Poll::Ready(Some(sess));
+                if let Some(pkt) = queue.pop_front() {
+                    return Poll::Ready(Some(Ok(pkt)));
                 }
             }
-            Err(err) => {
-                error!("sess poll lock queue failed: {:?}", err);
+            Err(e) => {
+                return Poll::Ready(Some(Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Mutex error: {}", e),
+                ))));
             }
         }
         match self.waker.lock() {
@@ -170,10 +193,39 @@ impl Stream for UdpListener {
                     waker.replace(cx.waker().clone());
                 }
             }
-            Err(err) => {
-                error!("sess poll lock waker failed: {:?}", err);
+            Err(e) => {
+                return Poll::Ready(Some(Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Mutex error: {}", e),
+                ))));
             }
         }
         Poll::Pending
+    }
+}
+
+pub struct SendHalf {
+    pub(crate) lwip_mutex: Arc<LWIPMutex>,
+    pub(crate) pcb: usize,
+}
+
+impl SendHalf {
+    pub fn send_to(
+        &self,
+        data: &[u8],
+        src_addr: &SocketAddr,
+        dst_addr: &SocketAddr,
+    ) -> io::Result<()> {
+        send_udp(&self.lwip_mutex, src_addr, dst_addr, self.pcb, data)
+    }
+}
+
+pub struct RecvHalf {
+    pub(crate) socket: Box<UdpSocket>,
+}
+
+impl RecvHalf {
+    pub async fn recv_from(&mut self) -> io::Result<(Vec<u8>, SocketAddr, SocketAddr)> {
+        self.socket.next().await.unwrap()
     }
 }

@@ -42,10 +42,6 @@ impl Default for AtomicMutex {
     }
 }
 
-unsafe impl Send for AtomicMutex {}
-
-unsafe impl Sync for AtomicMutex {}
-
 impl<'a> Drop for AtomicMutexGuard<'a> {
     fn drop(&mut self) {
         let _prev = self.mutex.locked.swap(false, Release);

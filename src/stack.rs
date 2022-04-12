@@ -5,13 +5,20 @@ use futures::stream::Stream;
 use futures::task::{Context, Poll};
 
 use super::stack_impl::NetStackImpl;
+use super::tcp_listener::TcpListener;
+use super::udp::UdpSocket;
 use super::LWIPMutex;
 
 pub struct NetStack(Box<NetStackImpl>);
 
 impl NetStack {
-    pub fn new(lwip_mutex: Arc<LWIPMutex>) -> Self {
-        NetStack(NetStackImpl::new(lwip_mutex))
+    pub fn new() -> (Self, TcpListener, Box<UdpSocket>) {
+        let m = Arc::new(LWIPMutex::new());
+        (
+            NetStack(NetStackImpl::new(m.clone())),
+            TcpListener::new(m.clone()),
+            UdpSocket::new(m),
+        )
     }
 }
 

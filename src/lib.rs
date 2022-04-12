@@ -11,10 +11,10 @@ mod tcp_stream_impl;
 mod udp;
 mod util;
 
-pub use mutex::AtomicMutex as LWIPMutex;
-pub use mutex::AtomicMutexGuard as LWIPMutexGuard;
+pub(crate) use mutex::AtomicMutex as LWIPMutex;
+pub(crate) use mutex::AtomicMutexGuard as LWIPMutexGuard;
+
 pub use stack::NetStack;
 pub use tcp_listener::TcpListener;
 pub use tcp_stream::TcpStream;
-pub use udp::send_udp;
-pub use udp::UdpListener;
+pub use udp::UdpSocket;

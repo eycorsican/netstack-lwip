@@ -10,7 +10,7 @@ pub struct TcpStream {
 }
 
 impl TcpStream {
-    pub fn new(stream: Box<TcpStreamImpl>) -> Self {
+    pub(crate) fn new(stream: Box<TcpStreamImpl>) -> Self {
         TcpStream { inner: stream }
     }
 }
