@@ -80,7 +80,7 @@ fn send_udp(
         let pbuf = pbuf_alloc_reference(
             data as *const [u8] as *mut [u8] as *mut raw::c_void,
             data.len() as u16_t,
-            pbuf_type_PBUF_ROM,
+            pbuf_type_PBUF_REF,
         );
         let src_ip = match util::to_ip_addr_t(&src_addr.ip()) {
             Ok(v) => v,
