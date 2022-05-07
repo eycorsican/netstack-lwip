@@ -77,11 +77,11 @@ fn send_udp(
 ) -> io::Result<()> {
     unsafe {
         let _g = lwip_mutex.lock();
-        let pbuf = pbuf_alloc_reference(
-            data as *const [u8] as *mut [u8] as *mut raw::c_void,
-            data.len() as u16_t,
-            pbuf_type_PBUF_REF,
-        );
+        let data_ptr = data as *const [u8] as *mut [u8] as *mut raw::c_void;
+        if data_ptr.is_null() {
+            return Err(io::Error::new(io::ErrorKind::Other, "data already freed"));
+        }
+        let pbuf = pbuf_alloc_reference(data_ptr, data.len() as u16_t, pbuf_type_PBUF_REF);
         let src_ip = match util::to_ip_addr_t(&src_addr.ip()) {
             Ok(v) => v,
             Err(_) => {
