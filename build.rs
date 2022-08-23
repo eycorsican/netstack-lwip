@@ -4,6 +4,34 @@ use std::{
     process::Command,
 };
 
+fn sdk_include_path_for(sdk: &str) -> String {
+    // sdk path find by `xcrun --sdk {iphoneos|macosx} --show-sdk-path`
+    let output = Command::new("xcrun")
+        .arg("--sdk")
+        .arg(sdk)
+        .arg("--show-sdk-path")
+        .output()
+        .expect("failed to execute xcrun");
+
+    let inc_path =
+        Path::new(String::from_utf8_lossy(&output.stdout).trim()).join("usr/include");
+
+    return inc_path.to_str().expect("invalid include path").to_string()
+}
+
+fn sdk_include_path() -> String {
+    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+
+    if os == "ios" {
+        return sdk_include_path_for("iphoneos")
+    }
+    else if os == "macos" {
+        return sdk_include_path_for("macosx")
+    }
+
+    return "".to_string()
+}
+
 fn compile_lwip() {
     println!("cargo:rerun-if-changed=src/lwip");
     cc::Build::new()
@@ -44,6 +72,7 @@ fn compile_lwip() {
         .file("src/lwip/custom/sys_arch.c")
         .include("src/lwip/custom")
         .include("src/lwip/include")
+        .include(sdk_include_path())
         .warnings(false)
         .flag_if_supported("-Wno-everything")
         .compile("liblwip.a");
@@ -53,6 +82,8 @@ fn generate_lwip_bindings() {
     println!("cargo:rustc-link-lib=lwip");
     // println!("cargo:rerun-if-changed=src/wrapper.h");
     println!("cargo:include=src/lwip/include");
+
+    let sdk_include_path = sdk_include_path();
 
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -68,26 +99,17 @@ fn generate_lwip_bindings() {
         } else {
             ""
         })
-        .clang_arg(if arch == "aarch64" && os == "ios" {
-            // sdk path find by `xcrun --sdk iphoneos --show-sdk-path`
-            let output = Command::new("xcrun")
-                .arg("--sdk")
-                .arg("iphoneos")
-                .arg("--show-sdk-path")
-                .output()
-                .expect("failed to execute xcrun");
-            let inc_path =
-                Path::new(String::from_utf8_lossy(&output.stdout).trim()).join("usr/include");
-            format!("-I{}", inc_path.to_str().expect("invalid include path"))
-        } else {
+        .clang_arg(if sdk_include_path.is_empty() {
             "".to_string()
+        } else {
+            format!("-I{}", sdk_include_path)
         })
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()
         .expect("Unable to generate bindings");
 
     let mut out_path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    out_path = out_path.join("src/netstack");
+    out_path = out_path.join("src");
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
