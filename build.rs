@@ -23,6 +23,12 @@ fn sdk_include_path() -> String {
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
     if os == "ios" {
+        let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+
+        if arch == "x86_64" {
+            return sdk_include_path_for("iphonesimulator")
+        }
+
         return sdk_include_path_for("iphoneos")
     }
     else if os == "macos" {
