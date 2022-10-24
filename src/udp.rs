@@ -50,6 +50,9 @@ pub extern "C" fn udp_recv_cb(
 
     match listener.queue.lock() {
         Ok(mut queue) => {
+            if queue.len() > listener.buffer_size {
+                return;
+            }
             queue.push_back(((&buf[..n]).to_vec(), src_addr, dst_addr));
             match listener.waker.lock() {
                 Ok(waker) => {
@@ -124,10 +127,11 @@ pub struct UdpSocket {
     pcb: usize,
     waker: Arc<Mutex<Option<Waker>>>,
     queue: Arc<Mutex<VecDeque<(Vec<u8>, SocketAddr, SocketAddr)>>>,
+    buffer_size: usize,
 }
 
 impl UdpSocket {
-    pub(crate) fn new(lwip_mutex: Arc<LWIPMutex>) -> Box<Self> {
+    pub(crate) fn new(lwip_mutex: Arc<LWIPMutex>, buffer_size: usize) -> Box<Self> {
         unsafe {
             let pcb = udp_new();
             let socket = Box::new(Self {
@@ -135,6 +139,7 @@ impl UdpSocket {
                 pcb: pcb as usize,
                 waker: Arc::new(Mutex::new(None)),
                 queue: Arc::new(Mutex::new(VecDeque::new())),
+                buffer_size,
             });
             let err = udp_bind(pcb, &ip_addr_any_type, 0);
             if err != err_enum_t_ERR_OK as err_t {

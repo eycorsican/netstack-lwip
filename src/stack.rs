@@ -15,9 +15,21 @@ impl NetStack {
     pub fn new() -> (Self, TcpListener, Box<UdpSocket>) {
         let m = Arc::new(LWIPMutex::new());
         (
-            NetStack(NetStackImpl::new(m.clone())),
+            NetStack(NetStackImpl::new(m.clone(), 512)),
             TcpListener::new(m.clone()),
-            UdpSocket::new(m),
+            UdpSocket::new(m, 64),
+        )
+    }
+
+    pub fn with_buffer_size(
+        stack_buffer_size: usize,
+        udp_buffer_size: usize,
+    ) -> (Self, TcpListener, Box<UdpSocket>) {
+        let m = Arc::new(LWIPMutex::new());
+        (
+            NetStack(NetStackImpl::new(m.clone(), stack_buffer_size)),
+            TcpListener::new(m.clone()),
+            UdpSocket::new(m, udp_buffer_size),
         )
     }
 }

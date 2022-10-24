@@ -3,7 +3,7 @@ use std::{
     os::raw,
     pin::Pin,
     sync::{
-        mpsc::{self, Receiver, Sender},
+        mpsc::{self, Receiver, SyncSender},
         Arc, Once,
     },
     time,
@@ -22,13 +22,13 @@ static LWIP_INIT: Once = Once::new();
 pub struct NetStackImpl {
     pub lwip_mutex: Arc<LWIPMutex>,
     waker: Option<Waker>,
-    tx: Sender<Vec<u8>>,
+    tx: SyncSender<Vec<u8>>,
     rx: Receiver<Vec<u8>>,
     sink_buf: Option<Vec<u8>>, // We're flushing per item, no need large buffer.
 }
 
 impl NetStackImpl {
-    pub fn new(lwip_mutex: Arc<LWIPMutex>) -> Box<Self> {
+    pub fn new(lwip_mutex: Arc<LWIPMutex>, buffer_size: usize) -> Box<Self> {
         LWIP_INIT.call_once(|| unsafe { lwip_init() });
 
         unsafe {
@@ -37,7 +37,7 @@ impl NetStackImpl {
             (*netif_list).mtu = 1500;
         }
 
-        let (tx, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::channel();
+        let (tx, rx): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::sync_channel(buffer_size);
 
         let stack = Box::new(NetStackImpl {
             lwip_mutex,
@@ -67,7 +67,7 @@ impl NetStackImpl {
 
     pub fn output(&mut self, pkt: Vec<u8>) -> io::Result<usize> {
         let n = pkt.len();
-        if let Err(_) = self.tx.send(pkt) {
+        if let Err(_) = self.tx.try_send(pkt) {
             return Ok(0);
         }
         if let Some(waker) = self.waker.as_ref() {
