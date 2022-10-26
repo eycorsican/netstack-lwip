@@ -67,7 +67,8 @@ impl NetStackImpl {
 
     pub fn output(&mut self, pkt: Vec<u8>) -> io::Result<usize> {
         let n = pkt.len();
-        if let Err(_) = self.tx.try_send(pkt) {
+        if let Err(e) = self.tx.try_send(pkt) {
+            // log::trace!("try send stack item failed: {}", e);
             return Ok(0);
         }
         if let Some(waker) = self.waker.as_ref() {
@@ -95,13 +96,7 @@ impl Stream for NetStackImpl {
         match self.rx.try_recv() {
             Ok(pkt) => Poll::Ready(Some(Ok(pkt))),
             Err(_) => {
-                if let Some(waker) = self.waker.as_ref() {
-                    if !waker.will_wake(cx.waker()) {
-                        self.waker.replace(cx.waker().clone());
-                    }
-                } else {
-                    self.waker.replace(cx.waker().clone());
-                }
+                self.waker.replace(cx.waker().clone());
                 Poll::Pending
             }
         }
@@ -134,6 +129,7 @@ impl Sink<Vec<u8>> for NetStackImpl {
 
                 let pbuf = pbuf_alloc(pbuf_layer_PBUF_RAW, item.len() as u16_t, pbuf_type_PBUF_RAM);
                 if pbuf.is_null() {
+                    log::trace!("pbuf_alloc null alloc");
                     return Poll::Pending;
                 }
                 pbuf_take(
