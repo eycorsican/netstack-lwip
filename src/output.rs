@@ -15,7 +15,7 @@ fn output(netif: *mut netif, p: *mut pbuf) -> err_t {
             return err_enum_t_ERR_ABRT as err_t;
         }
         let stack = &mut *(OUTPUT_CB_PTR as *mut NetStackImpl);
-        let _ = stack.output(buf);
+        stack.output(buf);
         err_enum_t_ERR_OK as err_t
     }
 }

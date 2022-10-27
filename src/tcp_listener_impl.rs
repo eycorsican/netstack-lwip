@@ -16,12 +16,7 @@ pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err
         return err_enum_t_ERR_OK as err_t;
     }
     let listener = unsafe { &mut *(arg as *mut TcpListenerImpl) };
-    let stream = match TcpStreamImpl::new(listener.lwip_mutex.clone(), newpcb) {
-        Ok(s) => s,
-        Err(e) => {
-            return err_enum_t_ERR_OK as err_t;
-        }
-    };
+    let stream = TcpStreamImpl::new(listener.lwip_mutex.clone(), newpcb);
     listener.queue.push_back(stream);
     if let Some(waker) = listener.waker.as_ref() {
         waker.wake_by_ref();
@@ -86,14 +81,9 @@ impl Stream for TcpListenerImpl {
             let local_addr = stream.local_addr().to_owned();
             let remote_addr = stream.remote_addr().to_owned();
             return Poll::Ready(Some((TcpStream::new(stream), local_addr, remote_addr)));
-        }
-        if let Some(waker) = self.waker.as_ref() {
-            if !waker.will_wake(cx.waker()) {
-                self.waker.replace(cx.waker().clone());
-            }
         } else {
             self.waker.replace(cx.waker().clone());
+            Poll::Pending
         }
-        Poll::Pending
     }
 }

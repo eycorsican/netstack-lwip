@@ -17,7 +17,7 @@ impl NetStack {
         (
             NetStack(NetStackImpl::new(m.clone(), 512)),
             TcpListener::new(m.clone()),
-            UdpSocket::new(m, 64),
+            UdpSocket::new(64),
         )
     }
 
@@ -29,7 +29,7 @@ impl NetStack {
         (
             NetStack(NetStackImpl::new(m.clone(), stack_buffer_size)),
             TcpListener::new(m.clone()),
-            UdpSocket::new(m, udp_buffer_size),
+            UdpSocket::new(udp_buffer_size),
         )
     }
 }

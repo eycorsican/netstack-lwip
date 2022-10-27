@@ -15,7 +15,7 @@ use super::util;
 use super::LWIPMutex;
 
 #[allow(unused_variables)]
-pub extern "C" fn tcp_recv_cb(
+pub unsafe extern "C" fn tcp_recv_cb(
     arg: *mut raw::c_void,
     tpcb: *mut tcp_pcb,
     p: *mut pbuf,
@@ -24,7 +24,7 @@ pub extern "C" fn tcp_recv_cb(
     // SAFETY: tcp_recv_cb is called from tcp_input or sys_check_timeouts only when
     // a data packet or previously refused data is received. Thus lwip_mutex must be locked.
     // See also `<NetStackImpl as AsyncWrite>::poll_write`.
-    let ctx = &mut *unsafe { TcpStreamContext::assume_locked(arg as *const TcpStreamContext) };
+    let ctx = &mut *TcpStreamContext::assume_locked(arg as *const TcpStreamContext);
 
     if p.is_null() {
         trace!("netstack tcp eof {}", ctx.local_addr);
@@ -32,22 +32,20 @@ pub extern "C" fn tcp_recv_cb(
         return err_enum_t_ERR_OK as err_t;
     }
 
-    let pbuflen = unsafe { (*p).tot_len };
+    let pbuflen = (*p).tot_len;
     let buflen = pbuflen as usize;
-    let mut buf = Vec::<u8>::with_capacity(buflen);
-    unsafe {
-        pbuf_copy_partial(p, buf.as_mut_ptr() as _, pbuflen, 0);
-        buf.set_len(pbuflen as usize);
-    };
+    let mut buf = Vec::with_capacity(buflen);
+    pbuf_copy_partial(p, buf.as_mut_ptr() as _, pbuflen, 0);
+    buf.set_len(pbuflen as usize);
 
     if let Some(Err(err)) = ctx.read_tx.as_ref().map(|tx| tx.send(buf)) {
         // rx is closed
         // call recvd?
         log::trace!("rx is closed");
-        return unsafe { tcp_shutdown(tpcb, 1, 0) };
+        return tcp_shutdown(tpcb, 1, 0);
     }
 
-    unsafe { pbuf_free(p) };
+    pbuf_free(p);
     err_enum_t_ERR_OK as err_t
 }
 
@@ -98,7 +96,7 @@ pub struct TcpStreamImpl {
 }
 
 impl TcpStreamImpl {
-    pub fn new(lwip_mutex: Arc<LWIPMutex>, pcb: *mut tcp_pcb) -> Result<Box<Self>> {
+    pub fn new(lwip_mutex: Arc<LWIPMutex>, pcb: *mut tcp_pcb) -> Box<Self> {
         unsafe {
             // Since we have no idea how to deal with a full bounded channel upon receiving
             // data from lwIP, an unbounded channel is used instead.
@@ -108,8 +106,8 @@ impl TcpStreamImpl {
             // Thus our unbounded channel will never be overwhelmed. To achieve this, we must
             // call `tcp_recved` when the data from our internal buffer are consumed.
             let (read_tx, read_rx) = unbounded_channel();
-            let src_addr = util::to_socket_addr(&(*pcb).remote_ip, (*pcb).remote_port)?;
-            let dest_addr = util::to_socket_addr(&(*pcb).local_ip, (*pcb).local_port)?;
+            let src_addr = util::to_socket_addr(&(*pcb).remote_ip, (*pcb).remote_port);
+            let dest_addr = util::to_socket_addr(&(*pcb).local_ip, (*pcb).local_port);
             let stream = Box::new(TcpStreamImpl {
                 lwip_mutex,
                 src_addr,
@@ -124,12 +122,9 @@ impl TcpStreamImpl {
             tcp_sent(pcb, Some(tcp_sent_cb));
             tcp_err(pcb, Some(tcp_err_cb));
             tcp_poll(pcb, Some(tcp_poll_cb), 8 as _);
-
             stream.apply_pcb_opts();
-
             trace!("netstack tcp new {}", stream.local_addr());
-
-            Ok(stream)
+            stream
         }
     }
 

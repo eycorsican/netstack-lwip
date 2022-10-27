@@ -2,16 +2,14 @@ use std::{
     io,
     os::raw,
     pin::Pin,
-    sync::{
-        mpsc::{self, Receiver, SyncSender},
-        Arc, Once,
-    },
+    sync::{Arc, Once},
     time,
 };
 
 use futures::sink::Sink;
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use super::lwip::*;
 use super::output::{output_ip4, output_ip6, OUTPUT_CB_PTR};
@@ -22,7 +20,7 @@ static LWIP_INIT: Once = Once::new();
 pub struct NetStackImpl {
     pub lwip_mutex: Arc<LWIPMutex>,
     waker: Option<Waker>,
-    tx: SyncSender<Vec<u8>>,
+    tx: Sender<Vec<u8>>,
     rx: Receiver<Vec<u8>>,
     sink_buf: Option<Vec<u8>>, // We're flushing per item, no need large buffer.
 }
@@ -37,7 +35,7 @@ impl NetStackImpl {
             (*netif_list).mtu = 1500;
         }
 
-        let (tx, rx): (SyncSender<Vec<u8>>, Receiver<Vec<u8>>) = mpsc::sync_channel(buffer_size);
+        let (tx, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = channel(buffer_size);
 
         let stack = Box::new(NetStackImpl {
             lwip_mutex,
@@ -65,17 +63,13 @@ impl NetStackImpl {
         stack
     }
 
-    pub fn output(&mut self, pkt: Vec<u8>) -> io::Result<usize> {
-        let n = pkt.len();
+    pub fn output(&mut self, pkt: Vec<u8>) {
         if let Err(e) = self.tx.try_send(pkt) {
-            // log::trace!("try send stack item failed: {}", e);
-            return Ok(0);
+            // log::trace!("try send stack output pkt failed: {}", e);
         }
         if let Some(waker) = self.waker.as_ref() {
             waker.wake_by_ref();
-            return Ok(n);
         }
-        Ok(0)
     }
 }
 
@@ -93,9 +87,10 @@ impl Stream for NetStackImpl {
     type Item = io::Result<Vec<u8>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match self.rx.try_recv() {
-            Ok(pkt) => Poll::Ready(Some(Ok(pkt))),
-            Err(_) => {
+        match self.rx.poll_recv(cx) {
+            Poll::Ready(Some(pkt)) => Poll::Ready(Some(Ok(pkt))),
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => {
                 self.waker.replace(cx.waker().clone());
                 Poll::Pending
             }
