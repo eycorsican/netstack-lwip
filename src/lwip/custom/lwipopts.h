@@ -98,7 +98,7 @@
 
 #define TCP_MSS 1460
 #define TCP_WND (32 * TCP_MSS)
-#define TCP_SND_BUF (32 * TCP_MSS)
+#define TCP_SND_BUF (16 * TCP_MSS)
 
 #if defined __APPLE__
     #include <TargetConditionals.h>
@@ -111,7 +111,7 @@
     #define MEM_SIZE (2 * 1024 * 1024)
 #endif
 
-#define MEMP_NUM_TCP_SEG 256
+#define MEMP_NUM_TCP_SEG 4096
 #define PBUF_POOL_SIZE 512
 
 // #define TCP_MSS 1460
