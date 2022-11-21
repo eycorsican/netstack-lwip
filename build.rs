@@ -13,28 +13,24 @@ fn sdk_include_path_for(sdk: &str) -> String {
         .output()
         .expect("failed to execute xcrun");
 
-    let inc_path =
-        Path::new(String::from_utf8_lossy(&output.stdout).trim()).join("usr/include");
+    let inc_path = Path::new(String::from_utf8_lossy(&output.stdout).trim()).join("usr/include");
 
-    return inc_path.to_str().expect("invalid include path").to_string()
+    inc_path.to_str().expect("invalid include path").to_string()
 }
 
-fn sdk_include_path() -> String {
+fn sdk_include_path() -> Option<String> {
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-
-    if os == "ios" {
-        return sdk_include_path_for("iphoneos")
+    match os.as_str() {
+        "ios" => Some(sdk_include_path_for("iphoneos")),
+        "macos" => Some(sdk_include_path_for("macosx")),
+        _ => None,
     }
-    else if os == "macos" {
-        return sdk_include_path_for("macosx")
-    }
-
-    return "".to_string()
 }
 
 fn compile_lwip() {
     println!("cargo:rerun-if-changed=src/lwip");
-    cc::Build::new()
+    let mut build = cc::Build::new();
+    build
         .file("src/lwip/core/init.c")
         .file("src/lwip/core/def.c")
         // .file("src/lwip/core/dns.c")
@@ -72,10 +68,12 @@ fn compile_lwip() {
         .file("src/lwip/custom/sys_arch.c")
         .include("src/lwip/custom")
         .include("src/lwip/include")
-        .include(sdk_include_path())
         .warnings(false)
-        .flag_if_supported("-Wno-everything")
-        .compile("liblwip.a");
+        .flag_if_supported("-Wno-everything");
+    if let Some(sdk_include_path) = sdk_include_path() {
+        build.include(sdk_include_path);
+    }
+    build.compile("liblwip.a");
 }
 
 fn generate_lwip_bindings() {
@@ -87,26 +85,21 @@ fn generate_lwip_bindings() {
 
     let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let bindings = bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default()
         .header("src/wrapper.h")
         .clang_arg("-I./src/lwip/include")
         .clang_arg("-I./src/lwip/custom")
         .clang_arg("-Wno-everything")
         .layout_tests(false)
-        .clang_arg(if arch == "aarch64" && os == "ios" {
-            // https://github.com/rust-lang/rust-bindgen/issues/1211
-            "--target=arm64-apple-ios"
-        } else {
-            ""
-        })
-        .clang_arg(if sdk_include_path.is_empty() {
-            "".to_string()
-        } else {
-            format!("-I{}", sdk_include_path)
-        })
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
-        .generate()
-        .expect("Unable to generate bindings");
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks));
+    if arch == "aarch64" && os == "ios" {
+        // https://github.com/rust-lang/rust-bindgen/issues/1211
+        builder = builder.clang_arg("--target=arm64-apple-ios");
+    }
+    if let Some(sdk_include_path) = sdk_include_path {
+        builder = builder.clang_arg(format!("-I{}", sdk_include_path));
+    }
+    let bindings = builder.generate().expect("Unable to generate bindings");
 
     let mut out_path = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     out_path = out_path.join("src");
