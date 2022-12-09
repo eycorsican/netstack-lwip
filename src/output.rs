@@ -1,5 +1,3 @@
-use std::os::raw;
-
 use super::lwip::*;
 use super::stack_impl::NetStackImpl;
 

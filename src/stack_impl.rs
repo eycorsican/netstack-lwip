@@ -1,10 +1,4 @@
-use std::{
-    io,
-    os::raw,
-    pin::Pin,
-    sync::{Arc, Once},
-    time,
-};
+use std::{io, os::raw, pin::Pin, sync::Once, time};
 
 use futures::sink::Sink;
 use futures::stream::Stream;
@@ -13,12 +7,11 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use super::lwip::*;
 use super::output::{output_ip4, output_ip6, OUTPUT_CB_PTR};
-use super::LWIPMutex;
+use super::LWIP_MUTEX;
 
 static LWIP_INIT: Once = Once::new();
 
 pub struct NetStackImpl {
-    pub lwip_mutex: Arc<LWIPMutex>,
     waker: Option<Waker>,
     tx: Sender<Vec<u8>>,
     rx: Receiver<Vec<u8>>,
@@ -26,7 +19,7 @@ pub struct NetStackImpl {
 }
 
 impl NetStackImpl {
-    pub fn new(lwip_mutex: Arc<LWIPMutex>, buffer_size: usize) -> Box<Self> {
+    pub fn new(buffer_size: usize) -> Box<Self> {
         LWIP_INIT.call_once(|| unsafe { lwip_init() });
 
         unsafe {
@@ -38,7 +31,6 @@ impl NetStackImpl {
         let (tx, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = channel(buffer_size);
 
         let stack = Box::new(NetStackImpl {
-            lwip_mutex,
             waker: None,
             tx,
             rx,
@@ -49,11 +41,10 @@ impl NetStackImpl {
             OUTPUT_CB_PTR = &*stack as *const NetStackImpl as usize;
         }
 
-        let lwip_mutex = stack.lwip_mutex.clone();
         tokio::spawn(async move {
             loop {
                 {
-                    let _g = lwip_mutex.lock();
+                    let _g = LWIP_MUTEX.lock();
                     unsafe { sys_check_timeouts() };
                 }
                 tokio::time::sleep(time::Duration::from_millis(250)).await;
@@ -77,7 +68,7 @@ impl Drop for NetStackImpl {
     fn drop(&mut self) {
         log::trace!("drop netstack");
         unsafe {
-            let _g = self.lwip_mutex.lock();
+            let _g = LWIP_MUTEX.lock();
             OUTPUT_CB_PTR = 0x0;
         };
     }
@@ -120,7 +111,7 @@ impl Sink<Vec<u8>> for NetStackImpl {
     ) -> Poll<Result<(), Self::Error>> {
         if let Some(item) = self.sink_buf.take() {
             unsafe {
-                let _g = self.lwip_mutex.lock();
+                let _g = LWIP_MUTEX.lock();
 
                 let pbuf = pbuf_alloc(pbuf_layer_PBUF_RAW, item.len() as u16_t, pbuf_type_PBUF_RAM);
                 if pbuf.is_null() {

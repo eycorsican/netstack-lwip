@@ -1,4 +1,4 @@
-use std::{cmp::min, io, net::SocketAddr, os::raw, pin::Pin, sync::Arc};
+use std::{cmp::min, io, net::SocketAddr, os::raw, pin::Pin};
 
 use anyhow::Result;
 use bytes::BytesMut;
@@ -12,7 +12,7 @@ use tokio::{
 use super::lwip::*;
 use super::tcp_stream_context::{TcpStreamContext, TcpStreamContextInner};
 use super::util;
-use super::LWIPMutex;
+use super::LWIP_MUTEX;
 
 #[allow(unused_variables)]
 pub unsafe extern "C" fn tcp_recv_cb(
@@ -87,7 +87,6 @@ pub extern "C" fn tcp_poll_cb(arg: *mut ::std::os::raw::c_void, tpcb: *mut tcp_p
 }
 
 pub struct TcpStreamImpl {
-    lwip_mutex: Arc<LWIPMutex>,
     src_addr: SocketAddr,
     dest_addr: SocketAddr,
     pcb: usize,
@@ -96,7 +95,7 @@ pub struct TcpStreamImpl {
 }
 
 impl TcpStreamImpl {
-    pub fn new(lwip_mutex: Arc<LWIPMutex>, pcb: *mut tcp_pcb) -> Box<Self> {
+    pub fn new(pcb: *mut tcp_pcb) -> Box<Self> {
         unsafe {
             // Since we have no idea how to deal with a full bounded channel upon receiving
             // data from lwIP, an unbounded channel is used instead.
@@ -109,7 +108,6 @@ impl TcpStreamImpl {
             let src_addr = util::to_socket_addr(&(*pcb).remote_ip, (*pcb).remote_port);
             let dest_addr = util::to_socket_addr(&(*pcb).local_ip, (*pcb).local_port);
             let stream = Box::new(TcpStreamImpl {
-                lwip_mutex,
                 src_addr,
                 dest_addr,
                 pcb: pcb as usize,
@@ -156,7 +154,7 @@ impl AsyncRead for TcpStreamImpl {
         buf: &mut ReadBuf,
     ) -> Poll<io::Result<()>> {
         let me = &mut *self;
-        let guard = me.lwip_mutex.lock();
+        let guard = LWIP_MUTEX.lock();
         let ctx = &mut *me.callback_ctx.with_lock(&guard);
         if ctx.errored {
             return Poll::Ready(Err(broken_pipe()));
@@ -193,7 +191,7 @@ impl AsyncRead for TcpStreamImpl {
 
 impl Drop for TcpStreamImpl {
     fn drop(&mut self) {
-        let guard = self.lwip_mutex.lock();
+        let guard = LWIP_MUTEX.lock();
         let ctx = &*self.callback_ctx.with_lock(&guard);
         trace!("netstack tcp drop {}", &ctx.local_addr);
         if !ctx.errored {
@@ -211,7 +209,7 @@ impl Drop for TcpStreamImpl {
 
 impl AsyncWrite for TcpStreamImpl {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
-        let guard = self.lwip_mutex.lock();
+        let guard = LWIP_MUTEX.lock();
         let ctx = &mut *self.callback_ctx.with_lock(&guard);
         if ctx.errored {
             return Poll::Ready(Err(broken_pipe()));
@@ -253,7 +251,7 @@ impl AsyncWrite for TcpStreamImpl {
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
-        let guard = self.lwip_mutex.lock();
+        let guard = LWIP_MUTEX.lock();
         if self.callback_ctx.with_lock(&guard).errored {
             return Poll::Ready(Err(broken_pipe()));
         }
@@ -269,7 +267,7 @@ impl AsyncWrite for TcpStreamImpl {
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
-        let guard = self.lwip_mutex.lock();
+        let guard = LWIP_MUTEX.lock();
         let ctx = &*self.callback_ctx.with_lock(&guard);
         if ctx.errored {
             return Poll::Ready(Err(broken_pipe()));
