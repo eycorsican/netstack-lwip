@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, net::SocketAddr, os::raw, pin::Pin, sync::Arc};
+use std::{collections::VecDeque, net::SocketAddr, os::raw, pin::Pin};
 
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
@@ -7,7 +7,7 @@ use log::*;
 use super::lwip::*;
 use super::tcp_stream::TcpStream;
 use super::tcp_stream_impl::TcpStreamImpl;
-use super::LWIPMutex;
+use super::LWIP_MUTEX;
 
 #[allow(unused_variables)]
 pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err: err_t) -> err_t {
@@ -16,7 +16,7 @@ pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err
         return err_enum_t_ERR_OK as err_t;
     }
     let listener = unsafe { &mut *(arg as *mut TcpListenerImpl) };
-    let stream = TcpStreamImpl::new(listener.lwip_mutex.clone(), newpcb);
+    let stream = TcpStreamImpl::new(newpcb);
     listener.queue.push_back(stream);
     if let Some(waker) = listener.waker.as_ref() {
         waker.wake_by_ref();
@@ -26,15 +26,14 @@ pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err
 
 pub struct TcpListenerImpl {
     pub tpcb: usize,
-    pub lwip_mutex: Arc<LWIPMutex>,
     pub waker: Option<Waker>,
     pub queue: VecDeque<Box<TcpStreamImpl>>,
 }
 
 impl TcpListenerImpl {
-    pub fn new(lwip_mutex: Arc<LWIPMutex>) -> Box<Self> {
+    pub fn new() -> Box<Self> {
         unsafe {
-            let _g = lwip_mutex.lock();
+            let _g = LWIP_MUTEX.lock();
             let mut tpcb = tcp_new();
             let err = tcp_bind(tpcb, &ip_addr_any_type, 0);
             if err != err_enum_t_ERR_OK as err_t {
@@ -51,7 +50,6 @@ impl TcpListenerImpl {
             }
             let listener = Box::new(TcpListenerImpl {
                 tpcb: tpcb as usize,
-                lwip_mutex: lwip_mutex.clone(),
                 waker: None,
                 queue: VecDeque::new(),
             });
@@ -66,7 +64,7 @@ impl TcpListenerImpl {
 impl Drop for TcpListenerImpl {
     fn drop(&mut self) {
         unsafe {
-            let _g = self.lwip_mutex.lock();
+            let _g = LWIP_MUTEX.lock();
             tcp_accept(self.tpcb as *mut tcp_pcb, None);
             tcp_close(self.tpcb as *mut tcp_pcb);
         }

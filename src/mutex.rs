@@ -13,7 +13,7 @@ pub struct AtomicMutexGuard<'a> {
 }
 
 impl AtomicMutex {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             locked: AtomicBool::new(false),
         }

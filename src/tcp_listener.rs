@@ -1,20 +1,19 @@
-use std::{net::SocketAddr, pin::Pin, sync::Arc};
+use std::{net::SocketAddr, pin::Pin};
 
 use futures::stream::Stream;
 use futures::task::{Context, Poll};
 
 use super::tcp_listener_impl::TcpListenerImpl;
 use super::tcp_stream::TcpStream;
-use super::LWIPMutex;
 
 pub struct TcpListener {
     inner: Box<TcpListenerImpl>,
 }
 
 impl TcpListener {
-    pub(crate) fn new(lwip_mutex: Arc<LWIPMutex>) -> Self {
+    pub(crate) fn new() -> Self {
         TcpListener {
-            inner: TcpListenerImpl::new(lwip_mutex),
+            inner: TcpListenerImpl::new(),
         }
     }
 }
