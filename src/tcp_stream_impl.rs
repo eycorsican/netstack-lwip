@@ -79,7 +79,7 @@ pub extern "C" fn tcp_err_cb(arg: *mut ::std::os::raw::c_void, err: err_t) {
 #[allow(unused_variables)]
 pub extern "C" fn tcp_poll_cb(arg: *mut ::std::os::raw::c_void, tpcb: *mut tcp_pcb) -> err_t {
     let ctx = &*unsafe { TcpStreamContext::assume_locked(arg as *const TcpStreamContext) };
-    trace!("netstack tcp poll {}", &ctx.local_addr);
+    // trace!("netstack tcp poll {}", &ctx.local_addr);
     if let Some(waker) = ctx.write_waker.as_ref() {
         waker.wake_by_ref();
     }
