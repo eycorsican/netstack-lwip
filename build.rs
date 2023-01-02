@@ -80,6 +80,7 @@ fn compile_lwip() {
     if let Some(sdk_include_path) = sdk_include_path() {
         build.include(sdk_include_path);
     }
+    build.debug(true);
     build.compile("liblwip.a");
 }
 
