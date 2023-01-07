@@ -110,6 +110,9 @@ impl Sink<Vec<u8>> for NetStackImpl {
         _cx: &mut Context<'_>,
     ) -> Poll<Result<(), Self::Error>> {
         if let Some(item) = self.sink_buf.take() {
+            if item.is_empty() {
+                return Poll::Ready(Ok(()));
+            }
             unsafe {
                 let _g = LWIP_MUTEX.lock();
 
