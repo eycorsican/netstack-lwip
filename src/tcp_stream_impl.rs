@@ -194,7 +194,9 @@ impl Drop for TcpStreamImpl {
                 tcp_sent(self.pcb as *mut tcp_pcb, None);
                 tcp_err(self.pcb as *mut tcp_pcb, None);
                 tcp_poll(self.pcb as *mut tcp_pcb, None, 0);
-                tcp_abort(self.pcb as *mut tcp_pcb);
+                if !ctx.closed {
+                    tcp_abort(self.pcb as *mut tcp_pcb);
+                }
             }
         }
     }
@@ -261,7 +263,7 @@ impl AsyncWrite for TcpStreamImpl {
 
     fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
         let guard = LWIP_MUTEX.lock();
-        let ctx = &*self.callback_ctx.with_lock(&guard);
+        let ctx = &mut *self.callback_ctx.with_lock(&guard);
         if ctx.errored {
             return Poll::Ready(Err(broken_pipe()));
         }
@@ -273,6 +275,7 @@ impl AsyncWrite for TcpStreamImpl {
                 format!("netstack tcp_shutdown tx error {}", err),
             )))
         } else {
+            ctx.closed = true;
             Poll::Ready(Ok(()))
         }
     }

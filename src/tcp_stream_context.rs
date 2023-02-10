@@ -15,6 +15,7 @@ pub struct TcpStreamContextInner {
     pub read_tx: Option<UnboundedSender<Vec<u8>>>,
     pub read_rx: UnboundedReceiver<Vec<u8>>,
     pub errored: bool,
+    pub closed: bool,
     pub write_waker: Option<Waker>,
 }
 
@@ -66,6 +67,7 @@ impl TcpStreamContext {
                 read_tx: Some(read_tx),
                 read_rx,
                 errored: false,
+                closed: false,
                 write_waker: None,
             }),
             borrowed: AtomicBool::new(false),
