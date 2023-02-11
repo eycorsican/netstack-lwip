@@ -41,6 +41,7 @@ fn send_udp(
     data: &[u8],
 ) -> io::Result<()> {
     unsafe {
+        let _g = super::LWIP_MUTEX.lock();
         let pbuf =
             pbuf_alloc_reference(data.as_ptr() as *mut _, data.len() as _, pbuf_type_PBUF_REF);
         let src_ip = util::to_ip_addr_t(src_addr.ip());
