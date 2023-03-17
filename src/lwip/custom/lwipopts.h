@@ -127,7 +127,7 @@
 // is used regardless of the platform
 #define IPV6_FRAG_COPYHEADER 1
 
-#define LWIP_DEBUG 0
+//#define LWIP_DEBUG 0
 #define LWIP_DBG_MIN_LEVEL LWIP_DBG_LEVEL_ALL
 #define LWIP_DBG_TYPES_ON LWIP_DBG_OFF
 #define NETIF_DEBUG LWIP_DBG_OFF
