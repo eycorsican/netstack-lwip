@@ -8,15 +8,15 @@ pub fn to_socket_addr(addr: &ip_addr_t, port: u16_t) -> SocketAddr {
     unsafe {
         match addr.type_ {
             // Ipv4
-            0 => SocketAddr::new(IpAddr::V4(addr.u_addr.ip4.addr.swap_bytes().into()), port),
+            0 => SocketAddr::new(IpAddr::V4(addr.u_addr.ip4.addr.to_ne_bytes().into()), port),
             // Ipv6
             6 => {
                 let addr = addr.u_addr.ip6.addr;
                 assert!(addr.len() == 4);
-                let p0 = addr[0].to_be_bytes();
-                let p1 = addr[1].to_be_bytes();
-                let p2 = addr[2].to_be_bytes();
-                let p3 = addr[3].to_be_bytes();
+                let p0 = addr[0].to_ne_bytes();
+                let p1 = addr[1].to_ne_bytes();
+                let p2 = addr[2].to_ne_bytes();
+                let p3 = addr[3].to_ne_bytes();
                 let mut p = [0u8; 16];
                 (&mut p[0..4]).copy_from_slice(&p0);
                 (&mut p[4..8]).copy_from_slice(&p1);
@@ -41,7 +41,7 @@ pub fn to_ip_addr_t(ip: IpAddr) -> ip_addr_t {
                 ip_addr_t {
                     u_addr: ip_addr__bindgen_ty_1 {
                         ip4: ip4_addr {
-                            addr: u32::from(ip4).swap_bytes(),
+                            addr: u32::from_ne_bytes(ip4.octets()),
                         },
                     },
                     type_: 0, // Ipv4
@@ -58,10 +58,10 @@ pub fn to_ip_addr_t(ip: IpAddr) -> ip_addr_t {
                 p2.copy_from_slice(&bytes[8..12]);
                 p3.copy_from_slice(&bytes[12..16]);
                 let addr = [
-                    u32::from_be_bytes(p0),
-                    u32::from_be_bytes(p1),
-                    u32::from_be_bytes(p2),
-                    u32::from_be_bytes(p3),
+                    u32::from_ne_bytes(p0),
+                    u32::from_ne_bytes(p1),
+                    u32::from_ne_bytes(p2),
+                    u32::from_ne_bytes(p3),
                 ];
                 ip_addr_t {
                     u_addr: ip_addr__bindgen_ty_1 {
