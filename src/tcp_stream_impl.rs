@@ -123,12 +123,14 @@ impl TcpStreamImpl {
         }
     }
 
-    #[cfg(not(target_os = "ios"))]
-    fn apply_pcb_opts(&self) {}
-
-    #[cfg(target_os = "ios")]
     fn apply_pcb_opts(&self) {
-        unsafe { (*(self.pcb as *mut tcp_pcb)).so_options |= SOF_KEEPALIVE as u8 };
+        unsafe {
+            #[cfg(target_os = "ios")]
+            {
+                (*(self.pcb as *mut tcp_pcb)).so_options |= SOF_KEEPALIVE as u8;
+            }
+            (*(self.pcb as *mut tcp_pcb)).flags |= TF_NODELAY as u16;
+        }
     }
 
     pub fn local_addr(&self) -> &SocketAddr {
