@@ -158,28 +158,38 @@ impl AsyncRead for TcpStreamImpl {
         if ctx.errored {
             return Poll::Ready(Err(broken_pipe()));
         }
-        // handle any previously unsent data
         if !me.write_buf.is_empty() {
             let to_read = min(buf.remaining(), me.write_buf.len());
             let piece = me.write_buf.split_to(to_read);
             buf.put_slice(&piece[..to_read]);
             return Poll::Ready(Ok(()));
         }
-        match Pin::new(&mut ctx.read_rx).poll_recv(cx) {
-            Poll::Ready(Some(data)) => {
-                if data.is_empty() {
-                    return Poll::Ready(Ok(())); // eof
+        let mut has_read_data = false;
+        loop {
+            match Pin::new(&mut ctx.read_rx).poll_recv(cx) {
+                Poll::Ready(Some(data)) => {
+                    // EOF
+                    if data.is_empty() {
+                        return Poll::Ready(Ok(()));
+                    }
+                    unsafe { tcp_recved(me.pcb as *mut tcp_pcb, data.len() as u16_t) };
+                    let to_read = min(buf.remaining(), data.len());
+                    buf.put_slice(&data[..to_read]);
+                    has_read_data = true;
+                    if to_read < data.len() {
+                        me.write_buf.extend_from_slice(&data[to_read..]);
+                        return Poll::Ready(Ok(()));
+                    }
                 }
-                let to_read = min(buf.remaining(), data.len());
-                buf.put_slice(&data[..to_read]);
-                if to_read < data.len() {
-                    me.write_buf.extend_from_slice(&data[to_read..]);
+                Poll::Ready(None) => return Poll::Ready(Err(broken_pipe())),
+                Poll::Pending => {
+                    return if has_read_data {
+                        Poll::Ready(Ok(()))
+                    } else {
+                        Poll::Pending
+                    };
                 }
-                unsafe { tcp_recved(me.pcb as *mut tcp_pcb, data.len() as u16_t) };
-                Poll::Ready(Ok(()))
             }
-            Poll::Ready(None) => Poll::Ready(Err(broken_pipe())),
-            Poll::Pending => Poll::Pending,
         }
     }
 }
