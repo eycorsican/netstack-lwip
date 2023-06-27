@@ -3,7 +3,6 @@ use std::{io, net::SocketAddr, os::raw, pin::Pin};
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
 use futures::StreamExt;
-use log::*;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use super::lwip::*;
@@ -21,12 +20,12 @@ pub unsafe extern "C" fn udp_recv_cb(
     let socket = &mut *(arg as *mut UdpSocket);
     let src_addr = util::to_socket_addr(&*addr, port);
     let dst_addr = util::to_socket_addr(&*dst_addr, dst_port);
-    let tot_len = (*p).tot_len;
+    let tot_len = std::ptr::read_unaligned(p).tot_len;
     let mut buf = Vec::with_capacity(tot_len as usize);
     pbuf_copy_partial(p, buf.as_mut_ptr() as *mut _, tot_len, 0);
     buf.set_len(tot_len as usize);
     pbuf_free(p);
-    if let Err(e) = socket.tx.try_send((buf, src_addr, dst_addr)) {
+    if let Err(_) = socket.tx.try_send((buf, src_addr, dst_addr)) {
         // log::trace!("try send udp pkt failed (netstack): {}", e);
     }
     if let Some(waker) = socket.waker.as_ref() {

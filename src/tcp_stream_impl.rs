@@ -1,6 +1,5 @@
 use std::{cmp::min, io, net::SocketAddr, os::raw, pin::Pin};
 
-use anyhow::Result;
 use bytes::BytesMut;
 use futures::task::{Context, Poll};
 use log::*;
@@ -10,7 +9,7 @@ use tokio::{
 };
 
 use super::lwip::*;
-use super::tcp_stream_context::{TcpStreamContext, TcpStreamContextInner};
+use super::tcp_stream_context::TcpStreamContext;
 use super::util;
 use super::LWIP_MUTEX;
 
@@ -32,9 +31,8 @@ pub unsafe extern "C" fn tcp_recv_cb(
         return err_enum_t_ERR_OK as err_t;
     }
 
-    let pbuflen = (*p).tot_len;
-    let buflen = pbuflen as usize;
-    let mut buf = Vec::with_capacity(buflen);
+    let pbuflen = std::ptr::read_unaligned(p).tot_len;
+    let mut buf = Vec::with_capacity(pbuflen as usize);
     pbuf_copy_partial(p, buf.as_mut_ptr() as _, pbuflen, 0);
     buf.set_len(pbuflen as usize);
 
@@ -102,8 +100,9 @@ impl TcpStreamImpl {
             // Thus our unbounded channel will never be overwhelmed. To achieve this, we must
             // call `tcp_recved` when the data from our internal buffer are consumed.
             let (read_tx, read_rx) = unbounded_channel();
-            let src_addr = util::to_socket_addr(&(*pcb).remote_ip, (*pcb).remote_port);
-            let dest_addr = util::to_socket_addr(&(*pcb).local_ip, (*pcb).local_port);
+            let pcb_v = std::ptr::read_unaligned(pcb);
+            let src_addr = util::to_socket_addr(&pcb_v.remote_ip, pcb_v.remote_port);
+            let dest_addr = util::to_socket_addr(&pcb_v.local_ip, pcb_v.local_port);
             let stream = Box::new(TcpStreamImpl {
                 src_addr,
                 dest_addr,
@@ -125,11 +124,13 @@ impl TcpStreamImpl {
 
     fn apply_pcb_opts(&self) {
         unsafe {
+            let mut pcb_v = std::ptr::read_unaligned(self.pcb as *const tcp_pcb);
             #[cfg(target_os = "ios")]
             {
-                (*(self.pcb as *mut tcp_pcb)).so_options |= SOF_KEEPALIVE as u8;
+                pcb_v.so_options |= SOF_KEEPALIVE as u8;
             }
-            (*(self.pcb as *mut tcp_pcb)).flags |= TF_NODELAY as u16;
+            pcb_v.flags |= TF_NODELAY as u16;
+            std::ptr::write_unaligned(self.pcb as *mut tcp_pcb, pcb_v);
         }
     }
 
@@ -139,6 +140,10 @@ impl TcpStreamImpl {
 
     pub fn remote_addr(&self) -> &SocketAddr {
         &self.dest_addr
+    }
+
+    fn send_buf_size(&self) -> usize {
+        unsafe { std::ptr::read_unaligned(self.pcb as *const tcp_pcb).snd_buf as usize }
     }
 }
 
@@ -221,7 +226,7 @@ impl AsyncWrite for TcpStreamImpl {
         if ctx.errored {
             return Poll::Ready(Err(broken_pipe()));
         }
-        let to_write = unsafe { min(buf.len(), (*(self.pcb as *mut tcp_pcb)).snd_buf as usize) };
+        let to_write = buf.len().min(self.send_buf_size());
         if to_write == 0 {
             ctx.write_waker.replace(cx.waker().clone());
             return Poll::Pending;

@@ -55,7 +55,7 @@ impl NetStackImpl {
     }
 
     pub fn output(&mut self, pkt: Vec<u8>) {
-        if let Err(e) = self.tx.try_send(pkt) {
+        if let Err(_) = self.tx.try_send(pkt) {
             // log::trace!("try send stack output pkt failed: {}", e);
         }
         if let Some(waker) = self.waker.as_ref() {

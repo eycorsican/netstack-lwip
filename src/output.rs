@@ -3,9 +3,9 @@ use super::stack_impl::NetStackImpl;
 
 pub static mut OUTPUT_CB_PTR: usize = 0x0;
 
-fn output(netif: *mut netif, p: *mut pbuf) -> err_t {
+fn output(_netif: *mut netif, p: *mut pbuf) -> err_t {
     unsafe {
-        let pbuflen = (*p).tot_len;
+        let pbuflen = std::ptr::read_unaligned(p).tot_len;
         let mut buf = Vec::with_capacity(pbuflen as usize);
         pbuf_copy_partial(p, buf.as_mut_ptr() as *mut _, pbuflen, 0);
         buf.set_len(pbuflen as usize);
