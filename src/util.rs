@@ -12,7 +12,6 @@ pub fn to_socket_addr(addr: &ip_addr_t, port: u16_t) -> SocketAddr {
             // Ipv6
             6 => {
                 let addr = addr.u_addr.ip6.addr;
-                assert!(addr.len() == 4);
                 let p0 = addr[0].to_ne_bytes();
                 let p1 = addr[1].to_ne_bytes();
                 let p2 = addr[2].to_ne_bytes();

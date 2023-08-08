@@ -12,6 +12,7 @@ futures = "0.3"
 log = "0.4"
 anyhow = "1.0"
 bytes = "1"
+thiserror = "1"
 
 [build-dependencies]
 cc = "1.0"

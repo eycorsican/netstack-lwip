@@ -3,10 +3,12 @@ use std::{io, net::SocketAddr, os::raw, pin::Pin};
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
 use futures::StreamExt;
+use log::error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use super::lwip::*;
 use super::util;
+use crate::Error;
 
 pub unsafe extern "C" fn udp_recv_cb(
     arg: *mut raw::c_void,
@@ -74,7 +76,7 @@ pub struct UdpSocket {
 }
 
 impl UdpSocket {
-    pub(crate) fn new(buffer_size: usize) -> Box<Self> {
+    pub(crate) fn new(buffer_size: usize) -> Result<Box<Self>, Error> {
         unsafe {
             let pcb = udp_new();
             let (tx, rx): (Sender<UdpPkt>, Receiver<UdpPkt>) = channel(buffer_size);
@@ -86,11 +88,12 @@ impl UdpSocket {
             });
             let err = udp_bind(pcb, &ip_addr_any_type, 0);
             if err != err_enum_t_ERR_OK as err_t {
-                panic!("{}", format!("bind udp error: {}", err));
+                error!("bind UDP failed: {}", err);
+                return Err(Error::LwIP(err));
             }
             let arg = &*socket as *const UdpSocket as *mut raw::c_void;
             udp_recv(pcb, Some(udp_recv_cb), arg);
-            socket
+            Ok(socket)
         }
     }
 

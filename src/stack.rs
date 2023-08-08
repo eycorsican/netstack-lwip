@@ -7,27 +7,28 @@ use futures::task::{Context, Poll};
 use super::stack_impl::NetStackImpl;
 use super::tcp_listener::TcpListener;
 use super::udp::UdpSocket;
+use crate::Error;
 
 pub struct NetStack(Box<NetStackImpl>);
 
 impl NetStack {
-    pub fn new() -> (Self, TcpListener, Box<UdpSocket>) {
-        (
+    pub fn new() -> Result<(Self, TcpListener, Box<UdpSocket>), Error> {
+        Ok((
             NetStack(NetStackImpl::new(512)),
-            TcpListener::new(),
-            UdpSocket::new(64),
-        )
+            TcpListener::new()?,
+            UdpSocket::new(64)?,
+        ))
     }
 
     pub fn with_buffer_size(
         stack_buffer_size: usize,
         udp_buffer_size: usize,
-    ) -> (Self, TcpListener, Box<UdpSocket>) {
-        (
+    ) -> Result<(Self, TcpListener, Box<UdpSocket>), Error> {
+        Ok((
             NetStack(NetStackImpl::new(stack_buffer_size)),
-            TcpListener::new(),
-            UdpSocket::new(udp_buffer_size),
-        )
+            TcpListener::new()?,
+            UdpSocket::new(udp_buffer_size)?,
+        ))
     }
 }
 

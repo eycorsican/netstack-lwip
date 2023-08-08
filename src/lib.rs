@@ -18,3 +18,9 @@ pub use stack::NetStack;
 pub use tcp_listener::TcpListener;
 pub use tcp_stream::TcpStream;
 pub use udp::UdpSocket;
+
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("LwIP error ({0})")]
+    LwIP(i8),
+}

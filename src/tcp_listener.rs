@@ -5,16 +5,17 @@ use futures::task::{Context, Poll};
 
 use super::tcp_listener_impl::TcpListenerImpl;
 use super::tcp_stream::TcpStream;
+use crate::Error;
 
 pub struct TcpListener {
     inner: Box<TcpListenerImpl>,
 }
 
 impl TcpListener {
-    pub(crate) fn new() -> Self {
-        TcpListener {
-            inner: TcpListenerImpl::new(),
-        }
+    pub(crate) fn new() -> Result<Self, Error> {
+        Ok(TcpListener {
+            inner: TcpListenerImpl::new()?,
+        })
     }
 }
 
