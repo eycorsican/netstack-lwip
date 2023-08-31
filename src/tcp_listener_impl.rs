@@ -16,6 +16,11 @@ pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err
         warn!("tcp full");
         return err_enum_t_ERR_OK as err_t;
     }
+    if err != err_enum_t_ERR_OK as err_t {
+        warn!("accept tcp failed: {}", err);
+        // Not sure what to do if there was an error, just ignore it.
+        return err_enum_t_ERR_OK as err_t;
+    }
     let listener = unsafe { &mut *(arg as *mut TcpListenerImpl) };
     let stream = TcpStreamImpl::new(newpcb);
     listener.queue.push_back(stream);
