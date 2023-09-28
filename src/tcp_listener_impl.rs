@@ -1,3 +1,4 @@
+use std::ptr::null_mut;
 use std::{collections::VecDeque, net::SocketAddr, os::raw, pin::Pin};
 
 use futures::stream::Stream;
@@ -12,6 +13,10 @@ use crate::Error;
 
 #[allow(unused_variables)]
 pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err: err_t) -> err_t {
+    if arg.is_null() {
+        warn!("tcp listener has been closed");
+        return err_enum_t_ERR_CONN as err_t;
+    }
     if newpcb.is_null() {
         warn!("tcp full");
         return err_enum_t_ERR_OK as err_t;
@@ -73,6 +78,7 @@ impl Drop for TcpListenerImpl {
     fn drop(&mut self) {
         unsafe {
             let _g = LWIP_MUTEX.lock();
+            tcp_arg(self.tpcb as *mut tcp_pcb, null_mut());
             tcp_accept(self.tpcb as *mut tcp_pcb, None);
             tcp_close(self.tpcb as *mut tcp_pcb);
         }

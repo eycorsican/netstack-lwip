@@ -20,6 +20,11 @@ pub unsafe extern "C" fn tcp_recv_cb(
     p: *mut pbuf,
     err: err_t,
 ) -> err_t {
+    if arg.is_null() {
+        warn!("tcp connection has been closed");
+        return err_enum_t_ERR_CONN as err_t;
+    }
+
     // SAFETY: tcp_recv_cb is called from tcp_input or sys_check_timeouts only when
     // a data packet or previously refused data is received. Thus lwip_mutex must be locked.
     // See also `<NetStackImpl as AsyncWrite>::poll_write`.

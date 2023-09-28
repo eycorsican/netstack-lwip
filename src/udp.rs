@@ -3,7 +3,7 @@ use std::{io, net::SocketAddr, os::raw, pin::Pin};
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
 use futures::StreamExt;
-use log::error;
+use log::{error, warn};
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 use super::lwip::*;
@@ -19,6 +19,10 @@ pub unsafe extern "C" fn udp_recv_cb(
     dst_addr: *const ip_addr_t,
     dst_port: u16_t,
 ) {
+    if arg.is_null() {
+        warn!("udp socket has been closed");
+        return;
+    }
     let socket = &mut *(arg as *mut UdpSocket);
     let src_addr = util::to_socket_addr(&*addr, port);
     let dst_addr = util::to_socket_addr(&*dst_addr, dst_port);
