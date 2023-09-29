@@ -1,9 +1,9 @@
 /**
  * @file lwipopts.h
  * @author Ambroz Bizjak <ambrop7@gmail.com>
- * 
+ *
  * @section LICENSE
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  * 1. Redistributions of source code must retain the above copyright
@@ -14,7 +14,7 @@
  * 3. Neither the name of the author nor the
  *    names of its contributors may be used to endorse or promote products
  *    derived from this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
  * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -63,28 +63,28 @@
 #define LWIP_IPV6_AUTOCONFIG 1
 
 #if defined __APPLE__
-    #include <TargetConditionals.h>
+#include <TargetConditionals.h>
 
-    #if TARGET_OS_IPHONE
-        #define LWIP_TCP_KEEPALIVE 1
-        #define MEMP_NUM_TCP_PCB 256
-    #else
-        #define MEMP_NUM_TCP_PCB 1024
-    #endif
-#elif defined __linux__
-    #include <endian.h>
-
-    // BYTE_ORDER by default is LITTLE_ENDIAN if undefined,
-    // detects only big endian here.
-    #if defined __BYTE_ORDER && defined __BIG_ENDIAN
-        #if _BYTE_ORDER == __BIG_ENDIAN
-            #define BYTE_ORDER BIG_ENDIAN
-        #endif
-    #endif
-
-    #define MEMP_NUM_TCP_PCB 1024
+#if TARGET_OS_IPHONE
+#define LWIP_TCP_KEEPALIVE 1
+#define MEMP_NUM_TCP_PCB 256
 #else
-    #define MEMP_NUM_TCP_PCB 1024
+#define MEMP_NUM_TCP_PCB 1024
+#endif
+#elif defined __linux__
+#include <endian.h>
+
+// BYTE_ORDER by default is LITTLE_ENDIAN if undefined,
+// detects only big endian here.
+#if defined __BYTE_ORDER && defined __BIG_ENDIAN
+#if _BYTE_ORDER == __BIG_ENDIAN
+#define BYTE_ORDER BIG_ENDIAN
+#endif
+#endif
+
+#define MEMP_NUM_TCP_PCB 1024
+#else
+#define MEMP_NUM_TCP_PCB 1024
 #endif
 
 // disable checksum checks
@@ -95,20 +95,21 @@
 #define CHECKSUM_CHECK_ICMP6 0
 
 #define LWIP_CHECKSUM_ON_COPY 1
+#define LWIP_CHKSUM_ALGORITHM 3
 
 #define TCP_MSS 1460
 #define TCP_WND (32 * TCP_MSS)
 #define TCP_SND_BUF (16 * TCP_MSS)
 
 #if defined __APPLE__
-    #include <TargetConditionals.h>
-    #if TARGET_OS_IPHONE
-        #define MEM_SIZE (512 * 1024)
-    #else
-        #define MEM_SIZE (2 * 1024 * 1024)
-    #endif
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#define MEM_SIZE (512 * 1024)
 #else
-    #define MEM_SIZE (2 * 1024 * 1024)
+#define MEM_SIZE (2 * 1024 * 1024)
+#endif
+#else
+#define MEM_SIZE (2 * 1024 * 1024)
 #endif
 
 #define MEMP_NUM_TCP_SEG 4096
@@ -140,14 +141,14 @@
 #define MEMP_DEBUG LWIP_DBG_OFF
 #define SYS_DEBUG LWIP_DBG_OFF
 #define TIMERS_DEBUG LWIP_DBG_OFF
- #define TCP_DEBUG LWIP_DBG_ON
+#define TCP_DEBUG LWIP_DBG_ON
 #define TCP_INPUT_DEBUG LWIP_DBG_OFF
 #define TCP_RTO_DEBUG LWIP_DBG_OFF
 #define TCP_CWND_DEBUG LWIP_DBG_OFF
 #define TCP_WND_DEBUG LWIP_DBG_OFF
- #define TCP_RST_DEBUG LWIP_DBG_ON
- #define TCP_QLEN_DEBUG LWIP_DBG_ON
- #define TCP_OUTPUT_DEBUG LWIP_DBG_ON
+#define TCP_RST_DEBUG LWIP_DBG_ON
+#define TCP_QLEN_DEBUG LWIP_DBG_ON
+#define TCP_OUTPUT_DEBUG LWIP_DBG_ON
 #define UDP_DEBUG LWIP_DBG_OFF
 #define TCPIP_DEBUG LWIP_DBG_OFF
 #define IP6_DEBUG LWIP_DBG_OFF
