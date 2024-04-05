@@ -20,10 +20,10 @@ fn sdk_include_path_for(sdk: &str) -> String {
 
 fn sdk_include_path() -> Option<String> {
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let target = env::var("TARGET").unwrap();
     match os.as_str() {
         "ios" => {
-            if arch == "x86_64" {
+            if target == "x86_64-apple-ios" || target == "aarch64-apple-ios-sim" {
                 Some(sdk_include_path_for("iphonesimulator"))
             } else {
                 Some(sdk_include_path_for("iphoneos"))
