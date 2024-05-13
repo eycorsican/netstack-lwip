@@ -1,10 +1,11 @@
 use std::marker::PhantomPinned;
 use std::ptr::null_mut;
-use std::{collections::VecDeque, net::SocketAddr, os::raw, pin::Pin};
+use std::{net::SocketAddr, os::raw, pin::Pin};
 
 use futures::stream::Stream;
-use futures::task::{Context, Poll, Waker};
+use futures::task::{Context, Poll};
 use log::*;
+use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
 
 use super::lwip::*;
 use super::tcp_stream::TcpStream;
@@ -28,17 +29,14 @@ pub extern "C" fn tcp_accept_cb(arg: *mut raw::c_void, newpcb: *mut tcp_pcb, err
     }
     let listener = unsafe { &mut *(arg as *mut TcpListener) };
     let stream = TcpStream::new(newpcb);
-    listener.queue.push_back(stream);
-    if let Some(waker) = listener.waker.as_ref() {
-        waker.wake_by_ref();
-    }
+    let _ = listener.sender.send(stream);
     err_enum_t_ERR_OK as err_t
 }
 
 pub struct TcpListener {
     tpcb: usize,
-    waker: Option<Waker>,
-    queue: VecDeque<Pin<Box<TcpStream>>>,
+    pub sender: UnboundedSender<Pin<Box<TcpStream>>>,
+    pub receiver: UnboundedReceiver<Pin<Box<TcpStream>>>,
     _pin: PhantomPinned,
 }
 
@@ -62,10 +60,11 @@ impl TcpListener {
                 error!("listen TCP failed: {}", reason);
                 return Err(Error::LwIP(reason));
             }
+            let (sender, receiver) = unbounded_channel();
             let listener = Box::pin(TcpListener {
                 tpcb: tpcb as usize,
-                waker: None,
-                queue: VecDeque::new(),
+                sender,
+                receiver,
                 _pin: PhantomPinned::default(),
             });
             let arg = &*listener as *const TcpListener as *mut raw::c_void;
@@ -92,13 +91,14 @@ impl Stream for TcpListener {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let me = unsafe { self.get_unchecked_mut() };
-        if let Some(stream) = me.queue.pop_front() {
-            let local_addr = stream.local_addr().to_owned();
-            let remote_addr = stream.remote_addr().to_owned();
-            return Poll::Ready(Some((stream, local_addr, remote_addr)));
-        } else {
-            me.waker.replace(cx.waker().clone());
-            Poll::Pending
+        match me.receiver.poll_recv(cx) {
+            Poll::Ready(Some(stream)) => {
+                let local_addr = stream.local_addr().to_owned();
+                let remote_addr = stream.remote_addr().to_owned();
+                return Poll::Ready(Some((stream, local_addr, remote_addr)));
+            },
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
