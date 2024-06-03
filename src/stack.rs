@@ -12,7 +12,7 @@ use crate::Error;
 pub struct NetStack(Box<NetStackImpl>);
 
 impl NetStack {
-    pub fn new() -> Result<(Self, TcpListener, Box<UdpSocket>), Error> {
+    pub fn new() -> Result<(Self, TcpListener, Pin<Box<UdpSocket>>), Error> {
         Ok((
             NetStack(NetStackImpl::new(512)),
             TcpListener::new()?,
@@ -23,7 +23,7 @@ impl NetStack {
     pub fn with_buffer_size(
         stack_buffer_size: usize,
         udp_buffer_size: usize,
-    ) -> Result<(Self, TcpListener, Box<UdpSocket>), Error> {
+    ) -> Result<(Self, TcpListener, Pin<Box<UdpSocket>>), Error> {
         Ok((
             NetStack(NetStackImpl::new(stack_buffer_size)),
             TcpListener::new()?,
