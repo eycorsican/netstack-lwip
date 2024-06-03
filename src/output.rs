@@ -1,5 +1,5 @@
 use super::lwip::*;
-use super::stack_impl::NetStackImpl;
+use super::NetStack;
 
 pub static mut OUTPUT_CB_PTR: usize = 0x0;
 
@@ -12,7 +12,7 @@ fn output(_netif: *mut netif, p: *mut pbuf) -> err_t {
         if OUTPUT_CB_PTR == 0x0 {
             return err_enum_t_ERR_ABRT as err_t;
         }
-        let stack = &mut *(OUTPUT_CB_PTR as *mut NetStackImpl);
+        let stack = &mut *(OUTPUT_CB_PTR as *mut NetStack);
         stack.output(buf);
         err_enum_t_ERR_OK as err_t
     }
