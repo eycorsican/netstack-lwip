@@ -1,4 +1,5 @@
 use std::{io, net::SocketAddr, os::raw, pin::Pin};
+use std::marker::PhantomPinned;
 
 use futures::stream::Stream;
 use futures::task::{Context, Poll, Waker};
@@ -77,18 +78,20 @@ pub struct UdpSocket {
     waker: Option<Waker>,
     tx: Sender<UdpPkt>,
     rx: Receiver<UdpPkt>,
+    _pin: PhantomPinned
 }
 
 impl UdpSocket {
-    pub(crate) fn new(buffer_size: usize) -> Result<Box<Self>, Error> {
+    pub(crate) fn new(buffer_size: usize) -> Result<Pin<Box<Self>>, Error> {
         unsafe {
             let pcb = udp_new();
             let (tx, rx): (Sender<UdpPkt>, Receiver<UdpPkt>) = channel(buffer_size);
-            let socket = Box::new(Self {
+            let socket = Box::pin(Self {
                 pcb: pcb as usize,
                 waker: None,
                 tx,
                 rx,
+                _pin: PhantomPinned::default()
             });
             let err = udp_bind(pcb, &ip_addr_any_type, 0);
             if err != err_enum_t_ERR_OK as err_t {
@@ -101,7 +104,7 @@ impl UdpSocket {
         }
     }
 
-    pub fn split(self: Box<Self>) -> (SendHalf, RecvHalf) {
+    pub fn split(self: Pin<Box<Self>>) -> (SendHalf, RecvHalf) {
         (SendHalf { pcb: self.pcb }, RecvHalf { socket: self })
     }
 }
@@ -118,12 +121,14 @@ impl Drop for UdpSocket {
 impl Stream for UdpSocket {
     type Item = UdpPkt;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        match self.rx.poll_recv(cx) {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        let this = unsafe { self.get_unchecked_mut() };
+
+        match this.rx.poll_recv(cx) {
             Poll::Ready(Some(pkt)) => Poll::Ready(Some(pkt)),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => {
-                self.waker.replace(cx.waker().clone());
+                this.waker.replace(cx.waker().clone());
                 Poll::Pending
             }
         }
@@ -146,7 +151,7 @@ impl SendHalf {
 }
 
 pub struct RecvHalf {
-    pub(crate) socket: Box<UdpSocket>,
+    pub(crate) socket: Pin<Box<UdpSocket>>,
 }
 
 impl RecvHalf {
