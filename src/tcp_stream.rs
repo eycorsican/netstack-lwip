@@ -93,6 +93,7 @@ pub struct TcpStream {
     pcb: usize,
     write_buf: BytesMut,
     callback_ctx: TcpStreamContext,
+    is_eof: bool,
     _pin: PhantomPinned,
 }
 
@@ -116,6 +117,7 @@ impl TcpStream {
                 pcb: pcb as usize,
                 write_buf: BytesMut::new(),
                 callback_ctx: TcpStreamContext::new(src_addr, dest_addr, read_tx, read_rx),
+                is_eof: false,
                 _pin: PhantomPinned::default(),
             });
             let arg = &stream.callback_ctx as *const _;
@@ -166,6 +168,9 @@ impl AsyncRead for TcpStream {
         buf: &mut ReadBuf,
     ) -> Poll<io::Result<()>> {
         let me = unsafe { self.get_unchecked_mut() };
+        if me.is_eof {
+            return Poll::Ready(Ok(()));
+        }
         let guard = LWIP_MUTEX.lock();
         let ctx = &mut *me.callback_ctx.with_lock(&guard);
         if ctx.errored {
@@ -183,6 +188,7 @@ impl AsyncRead for TcpStream {
                 Poll::Ready(Some(data)) => {
                     // EOF
                     if data.is_empty() {
+                        me.is_eof = true;
                         return Poll::Ready(Ok(()));
                     }
                     unsafe { tcp_recved(me.pcb as *mut tcp_pcb, data.len() as u16_t) };
