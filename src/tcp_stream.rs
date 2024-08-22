@@ -168,9 +168,6 @@ impl AsyncRead for TcpStream {
         buf: &mut ReadBuf,
     ) -> Poll<io::Result<()>> {
         let me = unsafe { self.get_unchecked_mut() };
-        if me.is_eof {
-            return Poll::Ready(Ok(()));
-        }
         let guard = LWIP_MUTEX.lock();
         let ctx = &mut *me.callback_ctx.with_lock(&guard);
         if ctx.errored {
@@ -203,6 +200,8 @@ impl AsyncRead for TcpStream {
                 Poll::Ready(None) => return Poll::Ready(Err(broken_pipe())),
                 Poll::Pending => {
                     return if has_read_data {
+                        Poll::Ready(Ok(()))
+                    } else if me.is_eof {
                         Poll::Ready(Ok(()))
                     } else {
                         Poll::Pending
