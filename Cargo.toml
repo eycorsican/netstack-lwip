@@ -16,4 +16,4 @@ thiserror = "1"
 
 [build-dependencies]
 cc = "1.0"
-bindgen = "0.59"
+bindgen = "0.70"
