@@ -117,14 +117,8 @@ fn generate_lwip_bindings() {
 }
 
 fn main() {
-    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    if os == "ios" || os == "android" || os == "linux" || os == "macos" {
-        compile_lwip();
-    }
-
-    if env::var("BINDINGS_GEN").is_ok()
-        && (os == "ios" || os == "android" || os == "linux" || os == "macos")
-    {
+    if env::var("BINDINGS_GEN").is_ok() {
         generate_lwip_bindings();
     }
+    compile_lwip();
 }
