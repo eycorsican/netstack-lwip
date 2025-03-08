@@ -40,7 +40,7 @@
 #define LWIP_ARP 0
 #define ARP_QUEUEING 0
 #define IP_FORWARD 0
-#define LWIP_ICMP 1
+#define LWIP_ICMP 0
 #define LWIP_RAW 1
 #define LWIP_DHCP 0
 #define LWIP_AUTOIP 0

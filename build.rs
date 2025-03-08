@@ -95,6 +95,7 @@ fn generate_lwip_bindings() {
     let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
     let mut builder = bindgen::Builder::default()
         .header("src/wrapper.h")
+        .size_t_is_usize(false)
         .clang_arg("-I./src/lwip/include")
         .clang_arg("-I./src/lwip/custom")
         .clang_arg("-Wno-everything")
@@ -117,14 +118,8 @@ fn generate_lwip_bindings() {
 }
 
 fn main() {
-    let os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    if os == "ios" || os == "android" || os == "linux" || os == "macos" {
-        compile_lwip();
-    }
-
-    if env::var("BINDINGS_GEN").is_ok()
-        && (os == "ios" || os == "android" || os == "linux" || os == "macos")
-    {
+    if env::var("BINDINGS_GEN").is_ok() {
         generate_lwip_bindings();
     }
+    compile_lwip();
 }
