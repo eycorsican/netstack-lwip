@@ -30,6 +30,15 @@
 #ifndef LWIP_CUSTOM_LWIPOPTS_H
 #define LWIP_CUSTOM_LWIPOPTS_H
 
+// Android 平台指定記憶體對齊，避免 ARMv7 SIGBUS 未對齊訪存
+#if defined(__ANDROID__)
+    #if defined(__aarch64__)
+        #define MEM_ALIGNMENT 8  // 64-bit ARM 對齊
+    #else
+        #define MEM_ALIGNMENT 4  // 32-bit ARM / x86 對齊
+    #endif
+#endif
+
 // enable tun2socks logic
 #define TUN2SOCKS 1
 
