@@ -113,6 +113,7 @@
 #if defined __APPLE__
 #include <TargetConditionals.h>
 #if TARGET_OS_IPHONE
+#define LWIP_CHKSUM_ALGORITHM 2
 #define MEM_SIZE (512 * 1024)
 #else
 #define MEM_SIZE (2 * 1024 * 1024)
@@ -167,3 +168,4 @@
 #define LWIP_PERF 0
 
 #endif
+
